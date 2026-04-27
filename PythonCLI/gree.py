@@ -167,8 +167,14 @@ def search_devices():
 
             pack = json.loads(decrypted_pack)
 
+            # Newer firmware (V3+) returns an empty cid in both the outer
+            # envelope and the decrypted pack, but carries the device MAC
+            # in pack['mac'].  Older firmware uses cid for the MAC.  Fall
+            # back through both before giving up.
             cid = pack['cid'] if 'cid' in pack and len(pack['cid']) > 0 else \
-                resp['cid'] if 'cid' in resp else '<unknown-cid>'
+                pack['mac'] if 'mac' in pack and len(pack['mac']) > 0 else \
+                resp['cid'] if 'cid' in resp and len(resp['cid']) > 0 else \
+                '<unknown-cid>'
 
             if encryption_type != 'GCM' and 'ver' in pack:
                 ver = re.search(r'(?<=V)[0-9]+(?<=.)', pack['ver'])
