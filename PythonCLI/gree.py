@@ -228,7 +228,7 @@ def bind_known_device():
     bind_device(ScanResult(args.client, 7000, args.id, '<known>', ENCRYPTION_TYPE))
 
 
-def bind_device(search_result):
+def bind_device(search_result, retried=False):
     print('Binding device: %s (%s, ID: %s, encryption: %s)' % (search_result.ip, search_result.name, search_result.id, search_result.encryption_type))
 
     pack = '{"mac":"%s","t":"bind","uid":0}' % search_result.id
@@ -242,9 +242,12 @@ def bind_device(search_result):
         result = send_data(search_result.ip, 7000, bytes(request, encoding='utf-8'))
     except socket.timeout:
         print('Device %s is not responding on bind request' % search_result.ip)
-        if search_result.encryption_type != 'GCM':
-            search_result.encryption_type = 'GCM'
-            bind_device(search_result)
+        if not retried:
+            # Some V3+ firmware reports a GCM-capable version string but only
+            # responds to ECB-keyed bind requests; some older firmware is the
+            # opposite.  Try the other encryption mode once before giving up.
+            search_result.encryption_type = 'ECB' if search_result.encryption_type == 'GCM' else 'GCM'
+            bind_device(search_result, retried=True)
 
         return
 
