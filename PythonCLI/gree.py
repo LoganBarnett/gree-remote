@@ -190,6 +190,38 @@ def search_devices():
             bind_device(r)
 
 
+def push_wlan_config():
+    print('Pushing WLAN credentials to %s: ssid=%r' % (args.client, args.ssid))
+
+    pack = '{"psw":"%s","ssid":"%s","t":"wlan"}' % (args.psw, args.ssid)
+
+    if args.verbose:
+        print(f'push_wlan_config: pack={pack}')
+
+    try:
+        result = send_data(args.client, 7000, bytes(pack, encoding='utf-8'))
+    except socket.timeout:
+        # Many units reboot without acknowledging the wlan packet.  The
+        # credentials were almost certainly accepted; verify by joining the
+        # home network and running search.
+        print('WLAN configuration sent; no response (device likely rebooting onto home network).')
+        print('Verify by reconnecting to home WiFi and running:')
+        print('  gree.py search -b <subnet>.255')
+        return
+
+    try:
+        raw_json = result[0:result.rfind(b'}') + 1]
+        resp = json.loads(raw_json)
+        print('WLAN configuration accepted: %s' % resp)
+    except (ValueError, json.JSONDecodeError):
+        print('WLAN configuration sent; response was not JSON: %r' % result)
+
+
+def bind_known_device():
+    print('Binding to %s (ID: %s, encryption: %s)' % (args.client, args.id, ENCRYPTION_TYPE))
+    bind_device(ScanResult(args.client, 7000, args.id, '<known>', ENCRYPTION_TYPE))
+
+
 def bind_device(search_result):
     print('Binding device: %s (%s, ID: %s, encryption: %s)' % (search_result.ip, search_result.name, search_result.id, search_result.encryption_type))
 
@@ -321,12 +353,14 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
 
     parser.add_help = True
-    parser.add_argument('command', help='You can use the following commands: search, get, set')
+    parser.add_argument('command', help='You can use the following commands: search, bind, wlan, get, set')
     parser.add_argument('-c', '--client', help='IP address of the client device')
     parser.add_argument('-b', '--broadcast', help='Broadcast IP address of the network the devices connecting to')
     parser.add_argument('-i', '--id', help='Unique ID of the device (mac address)')
     parser.add_argument('-k', '--key', help='Unique encryption key of the device')
     parser.add_argument('-e', '--encryption', help='Set the encryption type AES128 used: ECB(default), GCM')
+    parser.add_argument('--ssid', help='Home WiFi SSID (used by the wlan command)')
+    parser.add_argument('--psw', help='Home WiFi password (used by the wlan command)')
     parser.add_argument('--verbose', help='Enable verbose logging', action='store_true')
     if sys.platform == 'linux':
         parser.add_argument('--socket-interface', help='Bind the socket to a specific network interface')
@@ -345,6 +379,18 @@ if __name__ == '__main__':
             print('Error: search command requires a broadcast IP address')
             exit(1)
         search_devices()
+    elif command == 'wlan':
+        if args.client is None:
+            args.client = '192.168.1.1'
+        if args.ssid is None or args.psw is None:
+            print('Error: wlan command requires --ssid and --psw')
+            exit(1)
+        push_wlan_config()
+    elif command == 'bind':
+        if args.client is None or args.id is None:
+            print('Error: bind command requires a client IP (-c) and a device ID (-i)')
+            exit(1)
+        bind_known_device()
     elif command == 'get':
         if args.params is None or len(args.params) == 0 or args.client is None or args.id is None or args.key is None:
             print('Error: get command requires a parameter name, a client IP (-c), a device ID (-i) and a device key '
